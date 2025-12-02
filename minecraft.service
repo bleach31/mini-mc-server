@@ -1,0 +1,17 @@
+[Unit]
+Description=Minecraft Bedrock Server
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/minecraft
+# e2-micro用に環境変数を調整（ライブラリパス）
+Environment=LD_LIBRARY_PATH=.
+# 起動コマンド
+ExecStart=/opt/minecraft/bedrock_server
+Restart=always
+User=root
+# 落ちても少し待ってから再起動（リソース不足対策）
+RestartSec=20s
+
+[Install]
+WantedBy=multi-user.target
