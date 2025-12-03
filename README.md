@@ -26,12 +26,16 @@ VMにSSH接続し、以下のコマンドを実行してください。
 # 1. rootになる
 sudo -i
 
-# 2. gitのインストール
-apt-get update && apt-get install -y git
+# 2. git, cronのインストール
+apt-get update && apt-get install -y git cron
+
+#cronサービスを起動＆自動起動設定
+systemctl enable cron
+systemctl start cron
 
 # 3. リポジトリのクローン (URLは適宜変更してください)
-git clone [https://github.com/your-account/minecraft-bedrock-gcp.git](https://github.com/your-account/minecraft-bedrock-gcp.git)
-cd minecraft-bedrock-gcp
+git clone https://github.com/bleach31/mini-mc-server.git
+cd mini-mc-server
 
 # 4. セットアップの実行
 bash setup.sh
@@ -91,8 +95,27 @@ view-distance=10
   * `update_bedrock.sh`: アップデート＆バックアップ用スクリプト
   * `minecraft.service`: Systemdサービス定義ファイル
 
+
+
 ## 免責事項
 
 本スクリプトは学習・検証用です。Google Cloudの課金状況やワールドデータの破損については自己責任で管理してください。
 
+## トラブルシューティング
+
+### Q. `sudo` コマンドでパスワードを求められる、または拒否される
+
+Ubuntu Minimalイメージを使用した場合、初期ユーザーにsudo権限が正しく付与されていない、あるいはパスワード未設定のため認証できない場合があります。
+
+**解決策: GCPの起動スクリプトで権限を強制付与する**
+
+1. Google CloudコンソールでVMインスタンスの **[編集]** をクリックします。
+2. **[自動化]** セクションの **「起動スクリプト (Startup script)」** に以下を入力します（`<あなたのユーザー名>` はSSH接続時のユーザー名に書き換えてください）。
+
+```bash
+#! /bin/bash
+# ユーザーにパスワードなしでのsudo権限を付与
+USERNAME="<あなたのユーザー名>"
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
+chmod 440 /etc/sudoers.d/$USERNAME
 ```
