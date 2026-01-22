@@ -95,7 +95,38 @@ view-distance=10
   * `update_bedrock.sh`: アップデート＆バックアップ用スクリプト
   * `minecraft.service`: Systemdサービス定義ファイル
 
+## サーバー設定 (server.properties)
+メモリ1GB環境 (e2-micro) で安定動作させるための軽量化設定および推奨設定。
 
+**File:** `/opt/minecraft/server.properties`
+
+| 項目 | 設定値 | 理由 |
+| :--- | :--- | :--- |
+| `view-distance` | `12` | **【最重要】** 負荷軽減のため。初期値(32)は重すぎるため必ず下げる。重ければ6へ。 |
+| `tick-distance` | `4` | シミュレーション距離の最小化。CPU負荷を大きく下げる。 |
+| `max-players` | `5` | メモリ枯渇防止のため、参加人数を制限する。 |
+
+## ゲームルール (Game Rules)
+子供同士のトラブル防止（喧嘩・アイテム消失）と、サーバー負荷軽減のための「平和設定」。
+※管理者権限でサーバー内チャット、またはSSHコンソールから実行する。
+
+```bash
+# 死亡時のアイテムロスト無効 (アイテム消失トラブル防止 & ドロップ計算負荷軽減)
+gamerule keepinventory true
+
+# PvP無効 (プレイヤー間の攻撃無効・喧嘩防止)
+gamerule pvp false
+
+# 天候固定 (雨/雷の処理負荷カット & 雷による拠点延焼防止)
+gamerule doweathercycle false
+weather clear
+
+# TNT爆発無効 (地形破壊イタズラ防止)
+gamerule tntexplodes false
+
+# 座標表示 (迷子防止)
+gamerule showcoordinates true
+```
 
 ## 免責事項
 
