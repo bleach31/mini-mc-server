@@ -32,7 +32,7 @@ if [ -f "$ZIP_NAME" ]; then
 fi
 
 echo "ダウンロードを開始します..."
-wget --user-agent="$UA" "$DOWNLOAD_URL" -O "$ZIP_NAME"
+wget -nv --user-agent="$UA" "$DOWNLOAD_URL" -O "$ZIP_NAME"
 
 if [ ! -f "$ZIP_NAME" ] || [ ! -s "$ZIP_NAME" ]; then
     echo "ダウンロードに失敗しました（ファイルが空か存在しません）。"
