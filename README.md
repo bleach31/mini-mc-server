@@ -1,83 +1,87 @@
-# Minecraft Bedrock Server (GCP)
+# Minimal Minecraft Bedrock Server Setup
 
-Google Cloud VM 上で Minecraft Bedrock Dedicated Server を運用するためのスクリプトです。初回セットアップ、systemd 登録、自動アップデートを行います。
+Google Cloud Platform (GCP) の無料枠 (`e2-micro` インスタンス) を利用して、Minecraft Bedrock Edition (統合版) サーバーを構築・運用するためのスクリプトセットです。
 
-## ディレクトリ構成
+メモリ不足によるクラッシュを防ぐスワップ設定や、手間のかかるアップデート作業の自動化を含んでいます。
 
-- Git リポジトリ: `/opt/minecraft/mini-mc-server`
-- サーバー本体、ワールド、設定: `/opt/minecraft`
-- 更新スクリプト: `/opt/minecraft/update_bedrock.sh`（Git checkout 内のスクリプトへのリンク）
+Git リポジトリは `/opt/minecraft/mini-mc-server`、サーバー本体とワールドは `/opt/minecraft` に配置します。ワールドやサーバーデータは Git に含めません。
 
-Git checkout とゲームデータを同じ `/opt/minecraft` 配下に置きます。ワールドや設定ファイルは Git に追加しません。`setup.sh` は更新スクリプトを checkout 内のファイルへリンクするため、`git pull` 後は更新処理にも変更が反映されます。
+## 特徴
+* **完全自動セットアップ:** 依存パッケージ導入、スワップ領域(4GB)作成、サーバーインストール、サービス化をスクリプト1発で実行。
+* **自動アップデート:** 公式サイトから最新のバイナリを取得し、ワールドデータを保持したまま更新するスクリプト付属。
+* **自動復旧:** サーバーダウン時やVM再起動時に自動で立ち上がるSystemd設定。
 
-## VM の前提
+## 事前準備 (GCP設定)
+GCPコンソールで以下の構成のVMインスタンスを作成してください。
 
-GCP で Ubuntu VM を作成し、ネットワークのファイアウォールで Bedrock 用 UDP `19132` を必要に応じて許可します。SSH は管理元に制限してください。README の `sudo` コマンドは、SSH 接続ユーザーに sudo 権限があることを前提にしています。
+* **リージョン:** `us-west1` (オレゴン) 推奨
+* **マシンタイプ:** `e2-micro` (2 vCPU, 1 GB memory)
+* **ブートディスク:** Ubuntu 22.04 LTS **Minimal** (30GB / 標準永続ディスク)
+* **ファイアウォール:** UDP `19132` ポートを開放
+* **ネットワーク:** スタンダードティア (Standard Tier) ※推奨
 
-## 新規インストール
+## インストール手順
 
-SSH で VM に接続し、以下を実行します。リポジトリは `/opt/minecraft/mini-mc-server` に clone し、ゲームデータは `/opt/minecraft` に配置します。
+VMにSSH接続し、以下のコマンドを実行してください。
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y git cron curl unzip wget libcurl4
-sudo systemctl enable --now cron
+# 1. rootになる
+sudo -i
 
-sudo mkdir -p /opt/minecraft
-sudo git clone https://github.com/bleach31/mini-mc-server.git /opt/minecraft/mini-mc-server
-sudo chown -R "$USER":"$USER" /opt/minecraft/mini-mc-server
+# 2. git, cronのインストール
+apt-get update && apt-get install -y git cron
+
+#cronサービスを起動＆自動起動設定
+systemctl enable cron
+systemctl start cron
+
+# 3. /opt/minecraft 配下にcloneし、SSHユーザーが更新できるようにする
+mkdir -p /opt/minecraft
+git clone https://github.com/bleach31/mini-mc-server.git /opt/minecraft/mini-mc-server
+chown -R "$SUDO_USER:$SUDO_USER" /opt/minecraft/mini-mc-server
+
+# 4. rootシェルを抜けてセットアップを実行
+exit
 sudo bash /opt/minecraft/mini-mc-server/setup.sh
 ```
 
-`setup.sh` は 4 GiB の swap、依存パッケージ、Minecraft の systemd unit を設定し、初回アップデートを実行します。完了後、状態を確認します。
+インストールが完了すると、自動的にサーバーが起動します。
+
+## 運用方法
+
+### 自動アップデートの設定 (Cron)
+
+毎日深夜 (例: 朝4時) にアップデートを確認するように設定します。
 
 ```bash
-sudo systemctl status minecraft
+crontab -e
 ```
 
-## Git とアップデート
-
-リポジトリの変更をサーバーへ取り込むときは、SSH ユーザーで次を実行します。
-
-```bash
-cd /opt/minecraft/mini-mc-server
-git pull --ff-only
-```
-
-更新スクリプトはこの checkout を参照します。Bedrock サーバー本体の更新確認は別途 cron で毎日実行できます。
-
-```bash
-sudo crontab -e
-```
-
-次の行を追加します。
+以下の行を末尾に追加してください。
 
 ```cron
 0 4 * * * /bin/bash /opt/minecraft/update_bedrock.sh >> /opt/minecraft/update.log 2>&1
 ```
 
-更新スクリプトは導入済みバージョンを `/opt/minecraft/.bedrock_version` に記録し、古い `bedrock-server-*.zip` を削除して最新版の zip だけを残します。手動で確認・更新する場合:
+### 手動アップデート
+
+いつでも手動で最新版に更新できます。
 
 ```bash
-sudo /opt/minecraft/update_bedrock.sh
+sudo bash /opt/minecraft/update_bedrock.sh
 ```
 
-## サーバーの操作
+### Git の変更をサーバーへ反映
+
+SSHユーザーで実行します。更新スクリプトはリポジトリ内のファイルを参照します。
 
 ```bash
-sudo systemctl status minecraft
-sudo systemctl start minecraft
-sudo systemctl stop minecraft
-sudo systemctl restart minecraft
+git -C /opt/minecraft/mini-mc-server pull --ff-only
 ```
 
-設定ファイルは `/opt/minecraft/server.properties` です。変更後は `sudo systemctl restart minecraft` を実行します。メモリの少ない VM では `view-distance` や `max-players` を控えめにしてください。
+### サーバーの移行とバックアップ
 
-## サーバー移行とバックアップ
-
-移行では Git checkout ではなく、ワールドと `/opt/minecraft` の実データをバックアップします。次の手順はサーバーを停止して整合性のあるアーカイブを作り、再起動します。Bedrock の zip は再取得できるため除外し、Git checkout も移行先で clone し直すため除外します。
-
-### 移行元でバックアップを作る
+移行元では、ワールドや設定を含む `/opt/minecraft` をサーバー停止中にアーカイブします。サーバー本体のzipと Git リポジトリは移行先で再取得するため除外します。
 
 ```bash
 sudo systemctl stop minecraft
@@ -91,13 +95,9 @@ sha256sum "/tmp/minecraft-${STAMP}.tar.gz"
 sudo systemctl start minecraft
 ```
 
-アーカイブにはワールド、設定、現在のサーバーバイナリ、バージョン記録など `/opt/minecraft` の実データが含まれます。作成したアーカイブを `scp` や Cloud Storage で移行先へ転送し、SHA-256 も照合してください。移行元 VM 上だけにバックアップを置かないでください。
+アーカイブを `scp` または Cloud Storage で移行先へ転送し、SHA-256 を照合してください。移行元 VM 上だけにバックアップを置かないでください。
 
-### 移行先へ復元する
-
-1. 新しい VM に「新規インストール」の手順を実行します。これにより依存パッケージと systemd unit が設定されます。
-2. 転送したアーカイブを移行先 VM に置き、サーバーを停止して `/opt` へ展開します。
-3. systemd を再読込してサーバーを起動し、ログインしてワールドと設定を確認します。
+移行先には Ubuntu VM を用意し、「インストール手順」を実行して依存パッケージと systemd unit を設定します。その後、サーバーを停止してアーカイブを `/opt` に展開し、起動します。
 
 ```bash
 sudo systemctl stop minecraft
@@ -108,32 +108,88 @@ sudo systemctl start minecraft
 sudo systemctl status minecraft
 ```
 
-展開時は、移行元のワールド、設定、サーバーバイナリが移行先の初期データに上書きされます。移行先で正常に起動し、ワールドを確認するまで移行元 VM とバックアップを削除しないでください。問題があれば移行先を停止し、アーカイブから再度復元します。
+移行先でワールドに入れることを確認するまで、移行元 VM とバックアップは削除しないでください。
+
+### サーバーの操作コマンド
+
+  * **ステータス確認:** `systemctl status minecraft`
+  * **起動:** `systemctl start minecraft`
+  * **停止:** `systemctl stop minecraft`
+  * **再起動:** `systemctl restart minecraft`
+
+### 設定の変更
+
+サーバーの設定 (難易度、人数制限など) は以下のファイルを編集し、再起動してください。
+
+```bash
+nano /opt/minecraft/server.properties
+```
+
+**推奨設定 (e2-micro向け):**
+ラグを減らすため、視界距離 (`view-distance`) をデフォルトの `32` から `10` 以下に下げることを強く推奨します。
+
+```properties
+view-distance=10
+```
 
 ## ファイル構成
 
-- `setup.sh`: 初回セットアップと systemd 登録
-- `update_bedrock.sh`: 公式最新版の取得とサーバー更新
-- `minecraft.service`: systemd unit
+  * `setup.sh`: 初回構築用スクリプト (Swap作成、Systemd登録)
+  * `update_bedrock.sh`: アップデート＆バックアップ用スクリプト
+  * `minecraft.service`: Systemdサービス定義ファイル
 
-## ゲームルール例
+## サーバー設定 (server.properties)
+メモリ1GB環境 (e2-micro) で安定動作させるための軽量化設定および推奨設定。
 
-管理者権限でサーバー内から実行します。
+**File:** `/opt/minecraft/server.properties`
 
-```text
+| 項目 | 設定値 | 理由 |
+| :--- | :--- | :--- |
+| `view-distance` | `12` | **【最重要】** 負荷軽減のため。初期値(32)は重すぎるため必ず下げる。重ければ6へ。 |
+| `tick-distance` | `4` | シミュレーション距離の最小化。CPU負荷を大きく下げる。 |
+| `max-players` | `5` | メモリ枯渇防止のため、参加人数を制限する。 |
+
+## ゲームルール (Game Rules)
+子供同士のトラブル防止（喧嘩・アイテム消失）と、サーバー負荷軽減のための「平和設定」。
+※管理者権限でサーバー内チャット、またはSSHコンソールから実行する。
+
+```bash
+# 死亡時のアイテムロスト無効 (アイテム消失トラブル防止 & ドロップ計算負荷軽減)
 gamerule keepinventory true
+
+# PvP無効 (プレイヤー間の攻撃無効・喧嘩防止)
 gamerule pvp false
+
+# 天候固定 (雨/雷の処理負荷カット & 雷による拠点延焼防止)
 gamerule doweathercycle false
+weather clear
+
+# TNT爆発無効 (地形破壊イタズラ防止)
 gamerule tntexplodes false
+
+# 座標表示 (迷子防止)
 gamerule showcoordinates true
 ```
 
+## 免責事項
+
+本スクリプトは学習・検証用です。Google Cloudの課金状況やワールドデータの破損については自己責任で管理してください。
+
 ## トラブルシューティング
 
-サービスの状態とログを確認します。
+### Q. `sudo` コマンドでパスワードを求められる、または拒否される
+
+Ubuntu Minimalイメージを使用した場合、初期ユーザーにsudo権限が正しく付与されていない、あるいはパスワード未設定のため認証できない場合があります。
+
+**解決策: GCPの起動スクリプトで権限を強制付与する**
+
+1. Google CloudコンソールでVMインスタンスの **[編集]** をクリックします。
+2. **[自動化]** セクションの **「起動スクリプト (Startup script)」** に以下を入力します（`<あなたのユーザー名>` はSSH接続時のユーザー名に書き換えてください）。
 
 ```bash
-sudo systemctl status minecraft
-sudo journalctl -u minecraft -n 100 --no-pager
-tail -n 100 /opt/minecraft/update.log
+#! /bin/bash
+# ユーザーにパスワードなしでのsudo権限を付与
+USERNAME="<あなたのユーザー名>"
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
+chmod 440 /etc/sudoers.d/$USERNAME
 ```
