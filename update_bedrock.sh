@@ -3,10 +3,11 @@
 INSTALL_DIR="/opt/minecraft"
 BACKUP_DIR="$INSTALL_DIR/backups"
 WIKI_URL="https://minecraft.wiki/w/Bedrock_Dedicated_Server"
+VERSION_FILE="$INSTALL_DIR/.bedrock_version"
 # 偽装用のUser-Agent
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
 cd $INSTALL_DIR
 
 # --- A. 最新バージョンの確認 (Wikiから抽出 + ソート) ---
@@ -22,17 +23,26 @@ if [ -z "$DOWNLOAD_URL" ]; then
 fi
 
 ZIP_NAME=$(basename "$DOWNLOAD_URL")
+LATEST_VERSION=${ZIP_NAME#bedrock-server-}
+LATEST_VERSION=${LATEST_VERSION%.zip}
 echo "検出された最新バージョンURL: $DOWNLOAD_URL"
 echo "ファイル名: $ZIP_NAME"
 
-# --- B. 既にダウンロード済みかチェック ---
-if [ -f "$ZIP_NAME" ]; then
-    echo "既に最新版 ($ZIP_NAME) が存在します。アップデートは不要です。"
+# 最新版以外の過去の ZIP は毎回整理し、保持するアーカイブを最大1個にする。
+find "$INSTALL_DIR" -maxdepth 1 -type f -name 'bedrock-server-*.zip' ! -name "$ZIP_NAME" -delete
+
+# --- B. インストール済みバージョンを記録ファイルで確認 ---
+if [ -f "$VERSION_FILE" ] && [ "$(cat "$VERSION_FILE")" = "$LATEST_VERSION" ]; then
+    echo "既に最新版 ($LATEST_VERSION) がインストールされています。"
     exit 0
 fi
 
 echo "ダウンロードを開始します..."
-wget -nv --user-agent="$UA" "$DOWNLOAD_URL" -O "$ZIP_NAME"
+if ! wget -nv --user-agent="$UA" "$DOWNLOAD_URL" -O "$ZIP_NAME"; then
+    echo "ダウンロードに失敗しました。"
+    rm -f "$ZIP_NAME"
+    exit 1
+fi
 
 if [ ! -f "$ZIP_NAME" ] || [ ! -s "$ZIP_NAME" ]; then
     echo "ダウンロードに失敗しました（ファイルが空か存在しません）。"
@@ -67,5 +77,12 @@ chmod +x bedrock_server
 
 # --- E. サーバー起動 ---
 echo "サーバーを起動します..."
-systemctl start minecraft
+if ! systemctl start minecraft; then
+    echo "エラー: Minecraft サーバーを起動できませんでした。バージョン記録は更新していません。"
+    exit 1
+fi
+
+# 最新版のインストールが完了した後、古い Bedrock サーバー ZIP を削除する。
+printf '%s\n' "$LATEST_VERSION" > "$VERSION_FILE"
+find "$INSTALL_DIR" -maxdepth 1 -type f -name 'bedrock-server-*.zip' ! -name "$ZIP_NAME" -delete
 echo "作業完了！"
